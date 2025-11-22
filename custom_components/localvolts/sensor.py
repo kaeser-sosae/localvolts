@@ -22,6 +22,7 @@ MONETARY_CONVERSION_FACTOR = 100
 
 COSTS_FLEX_UP = "costsFlexUp"
 EARNINGS_FLEX_UP = "earningsFlexUp"
+ACTUAL_COST = "costsAll"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ async def async_setup_entry(
         [
             LocalvoltsCostsFlexUpSensor(coordinator),
             LocalvoltsEarningsFlexUpSensor(coordinator),
+            LocalvoltsActualCostSensor(coordinator),
             LocalvoltsDataLagSensor(coordinator),
             LocalvoltsIntervalEndSensor(coordinator),
         ]
@@ -105,6 +107,28 @@ class LocalvoltsEarningsFlexUpSensor(LocalvoltsSensor):
         super().__init__(coordinator, EARNINGS_FLEX_UP)
         self._attr_name = EARNINGS_FLEX_UP
         self._attr_unique_id = f"{coordinator.nmi_id}_{EARNINGS_FLEX_UP}"
+
+
+class LocalvoltsActualCostSensor(LocalvoltsSensor):
+    """Sensor for the actual total cost of the latest 5-minute interval."""
+
+    _attr_native_unit_of_measurement = "$"
+    _attr_device_class = SensorDeviceClass.MONETARY
+
+    def __init__(self, coordinator: LocalvoltsDataUpdateCoordinator) -> None:
+        super().__init__(coordinator, ACTUAL_COST)
+        self._attr_name = "actualCost"
+        self._attr_unique_id = f"{coordinator.nmi_id}_actual_cost"
+
+    @property
+    def native_value(self):
+        """Return the total cost in dollars (cents from API / 100)."""
+        item = self.coordinator.data
+        if item:
+            value = item.get(self.data_key)
+            if value is not None:
+                self._last_value = round(value / MONETARY_CONVERSION_FACTOR, 2)
+        return self._last_value
 
 
 class LocalvoltsDataLagSensor(CoordinatorEntity, SensorEntity):

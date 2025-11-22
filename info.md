@@ -6,6 +6,7 @@ Localvolts is a Home Assistant integration for customers of the Localvolts elect
 ## Key sensors
 - **sensor.costsFlexUp** – import cost per kWh for the rest of the current five-minute interval.
 - **sensor.earningsFlexUp** – export price per extra kWh sent to the grid during the current interval.
+- **sensor.actualCost** – total cost incurred for the latest five-minute interval (in dollars, converted from cents).
 - **sensor.dataLag** – delay between new data appearing in the Localvolts API and being retrieved.
 - **sensor.intervalEnd** – attributes describing the current five-minute interval, including demand and pricing information.
 

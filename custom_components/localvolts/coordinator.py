@@ -1,9 +1,10 @@
 """Coordinator for Localvolts integration."""
 
+import asyncio
 import datetime
 import logging
 from dateutil import parser, tz
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import (
@@ -45,9 +46,6 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
         self.lastUpdate: Any = None
         self.time_past_start: datetime.timedelta = datetime.timedelta(0)
         self.data: Dict[str, Any] = {}
-        self.today_cost_cents: float | None = None
-        self.today_cost_error: Optional[str] = None
-        self._tz = dt_util.get_time_zone(hass.config.time_zone) or datetime.timezone.utc
 
 
         super().__init__(
@@ -71,19 +69,6 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
         # Determine if we need to fetch new data
         if (self.intervalEnd is None) or (current_utc_time > self.intervalEnd):
             _LOGGER.debug("New interval detected. Retrieving the latest data.")
-            from_time_str: str = from_time.strftime("%Y-%m-%dT%H:%M:%SZ")
-            to_time_str: str = to_time.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-            url: str = (
-                f"https://api.localvolts.com/v1/customer/interval?"
-                f"NMI={self.nmi_id}&from={from_time_str}&to={to_time_str}"
-            )
-
-            headers: Dict[str, str] = {
-                "Authorization": f"apikey {self.api_key}",
-                "partner": self.partner_id,
-            }
-
             try:
                 session = async_get_clientsession(self.hass)
                 data = await self._fetch_intervals(session, from_time, to_time)
@@ -125,18 +110,16 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
                         "Skipping non-'exp' quality data. Only 'exp' is processed."
                     )
             if not new_data_found:
-                _LOGGER.debug("No new data with 'exp' quality found. Retaining last known data.")
-                # Do not update self.time_past_start; retain the last known value
-                # Optionally, you can log the time since the last update if needed
-            else:
-                # Update aggregated costs (today and this month) after a new interval is found.
-                try:
-                    await self._update_aggregated_costs(session, current_utc_time)
-                except Exception as err:  # noqa: BLE001
-                    # Do not fail the coordinator if aggregation fails; only aggregation sensors should break.
-                    _LOGGER.debug("Aggregation update failed (sensors will show unavailable): %s", err)
+                self.time_past_start = datetime.timedelta(0)
+                _LOGGER.warning("No 'exp' quality data returned for the interval; marking update as failed.")
+                raise UpdateFailed("No 'exp' quality interval returned")
         else:
             _LOGGER.debug("Data did not change. Still in the same interval.")
+            if self.intervalEnd:
+                interval_start = self.intervalEnd - datetime.timedelta(minutes=5)
+                elapsed = dt_util.utcnow() - interval_start
+                # Clamp to zero to avoid negative durations when interval is in the future.
+                self.time_past_start = elapsed if elapsed > datetime.timedelta(0) else datetime.timedelta(0)
 
         # Return self.data to comply with DataUpdateCoordinator requirements
         return self.data
@@ -161,16 +144,33 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
             "partner": self.partner_id,
         }
 
-        async with session.get(url, headers=headers) as response:
-            if response.status == 401:
-                _LOGGER.critical("Unauthorized access: Check your API key.")
-                raise UpdateFailed("Unauthorized access: Invalid API key.")
-            if response.status == 403:
-                _LOGGER.critical("Forbidden: Check your Partner ID.")
-                raise UpdateFailed("Forbidden: Invalid Partner ID.")
+        data: Any = None
+        attempts = 3
+        for attempt in range(1, attempts + 1):
+            async with session.get(url, headers=headers) as response:
+                if response.status == 401:
+                    _LOGGER.critical("Unauthorized access: Check your API key.")
+                    raise UpdateFailed("Unauthorized access: Invalid API key.")
+                if response.status == 403:
+                    _LOGGER.critical("Forbidden: Check your Partner ID.")
+                    raise UpdateFailed("Forbidden: Invalid Partner ID.")
+                if response.status == 429 or response.status >= 500:
+                    if attempt == attempts:
+                        raise UpdateFailed(f"Localvolts API returned {response.status}")
+                    delay = 2 ** (attempt - 1)
+                    _LOGGER.warning(
+                        "Localvolts API returned %s. Retrying in %ss (attempt %s/%s).",
+                        response.status,
+                        delay,
+                        attempt,
+                        attempts,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
 
-            response.raise_for_status()
-            data: Any = await response.json()
+                response.raise_for_status()
+                data: Any = await response.json()
+                break
 
         if isinstance(data, list) and not data:
             _LOGGER.warning(
@@ -182,44 +182,6 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
             raise UpdateFailed("Unexpected API response format: expected list of intervals")
 
         return data
-
-    async def _update_aggregated_costs(
-        self, session: aiohttp.ClientSession, now_utc: datetime.datetime
-    ) -> None:
-        """Update totals for today (costsAll in cents)."""
-        # Compute boundaries in the user's configured timezone, then convert to UTC for the API
-        local_now = now_utc.astimezone(self._tz) if now_utc.tzinfo else dt_util.now(self._tz)
-        start_of_day_local = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-        start_of_day = dt_util.as_utc(start_of_day_local)
-
-        # Reset errors and compute aggregates safely
-        self.today_cost_error = None
-
-        day_intervals = await self._safe_fetch_intervals(session, start_of_day, now_utc, "today")
-        if day_intervals is not None:
-            self.today_cost_cents = self._sum_costs(day_intervals)
-        else:
-            self.today_cost_cents = None
-            self.today_cost_error = "Failed to fetch today's intervals"
-
-        _LOGGER.debug(
-            "Aggregated costs updated: today=%s cents",
-            self.today_cost_cents,
-        )
-
-    async def _safe_fetch_intervals(
-        self,
-        session: aiohttp.ClientSession,
-        from_time: datetime.datetime,
-        to_time: datetime.datetime,
-        label: str,
-    ) -> Optional[List[Dict[str, Any]]]:
-        """Fetch intervals for aggregation without breaking the coordinator."""
-        try:
-            return await self._fetch_intervals(session, from_time, to_time)
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Skipping %s aggregation due to error: %s", label, err)
-            return None
 
     @staticmethod
     def _sum_costs(intervals: List[Dict[str, Any]]) -> float:

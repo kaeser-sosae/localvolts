@@ -62,6 +62,15 @@ In Home Assistant, copy the files in this repository into a subfolder of your ex
 In either case, you will need to restart Home Assistant to get the integration working.
 Look for the sensors (sensor.costsFlexUp and sensor.earningsFlexUp) in Home Assistant to verify it worked.
 
+# Updating with the helper script
+If you are running Home Assistant in Docker on a Raspberry Pi and have the update script at `/home/pi/update_localvolts.sh`, run:
+
+```
+bash /home/pi/update_localvolts.sh
+```
+
+The script clones this repository into `/tmp`, copies the `custom_components/localvolts` folder into `/home/pi/homeassistant/custom_components/localvolts`, and restarts the `homeassistant` container. Adjust the container name in the script if yours differs.
+
 
 Now you can create actions that orchestrate your smart appliances based on what electricity cost you will incur or price you will earn with Localvolts
 

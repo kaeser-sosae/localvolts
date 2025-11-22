@@ -261,9 +261,7 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
         adjusted = dict(item)
         try:
             interval_end = parser.isoparse(str(item.get("intervalEnd")))
-            interval_end = (interval_end - datetime.timedelta(days=1, hours=2)).astimezone(
-                datetime.timezone.utc
-            )
+            interval_end = (interval_end - datetime.timedelta(days=1)).astimezone(datetime.timezone.utc)
             adjusted["intervalEnd"] = interval_end.isoformat()
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Failed to adjust intervalEnd: %s", err)

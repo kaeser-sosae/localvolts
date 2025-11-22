@@ -181,11 +181,7 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
         if not isinstance(data, list):
             raise UpdateFailed("Unexpected API response format: expected list of intervals")
 
-        adjusted: List[Dict[str, Any]] = []
-        for item in data:
-            adjusted.append(self._adjust_interval_record(item))
-
-        return adjusted
+        return data
 
     async def _update_aggregated_costs(
         self, session: aiohttp.ClientSession, now_utc: datetime.datetime
@@ -249,30 +245,3 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
         else:
             dt_obj = dt_obj.astimezone(datetime.timezone.utc)
         return dt_obj.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    @staticmethod
-    def _adjust_interval_record(item: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Apply temporary adjustments to interval times to work around API date issues.
-
-        - intervalEnd: subtract 1 day and 2 hours, drop trailing Z by emitting ISO with offset
-        - lastUpdate: subtract 2 hours
-        """
-        adjusted = dict(item)
-        try:
-            interval_end = parser.isoparse(str(item.get("intervalEnd")))
-            interval_end = (interval_end - datetime.timedelta(days=1)).astimezone(datetime.timezone.utc)
-            adjusted["intervalEnd"] = interval_end.isoformat()
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Failed to adjust intervalEnd: %s", err)
-
-        try:
-            last_update = parser.isoparse(str(item.get("lastUpdate")))
-            last_update = (last_update - datetime.timedelta(hours=2)).astimezone(
-                datetime.timezone.utc
-            )
-            adjusted["lastUpdate"] = last_update.isoformat()
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("Failed to adjust lastUpdate: %s", err)
-
-        return adjusted

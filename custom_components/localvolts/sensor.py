@@ -7,6 +7,7 @@ from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
+    SensorStateClass,
     SensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -23,6 +24,7 @@ MONETARY_CONVERSION_FACTOR = 100
 COSTS_FLEX_UP = "costsFlexUp"
 EARNINGS_FLEX_UP = "earningsFlexUp"
 ACTUAL_COST = "costsAll"
+ENERGY_USED = "importsAll"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +42,7 @@ async def async_setup_entry(
             LocalvoltsCostsFlexUpSensor(coordinator),
             LocalvoltsEarningsFlexUpSensor(coordinator),
             LocalvoltsActualCostSensor(coordinator),
+            LocalvoltsEnergyUsedSensor(coordinator),
             LocalvoltsDataLagSensor(coordinator),
             LocalvoltsIntervalEndSensor(coordinator),
         ]
@@ -129,6 +132,36 @@ class LocalvoltsActualCostSensor(LocalvoltsSensor):
             if value is not None:
                 self._last_value = round(value / MONETARY_CONVERSION_FACTOR, 2)
         return self._last_value
+
+
+class LocalvoltsEnergyUsedSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for the energy consumed during the latest 5-minute interval."""
+
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: LocalvoltsDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "energyUsed"
+        self._attr_unique_id = f"{coordinator.nmi_id}_energy_used"
+        self._attr_should_poll = False
+
+    @property
+    def native_value(self):
+        """Return the interval energy usage in kWh."""
+        item = self.coordinator.data
+        return item.get(ENERGY_USED) if item else None
+
+    @property
+    def extra_state_attributes(self):
+        """Return interval timestamps for reference."""
+        interval_end = self.coordinator.intervalEnd
+        last_update = self.coordinator.lastUpdate
+        return {
+            "intervalEnd": interval_end.isoformat() if interval_end else None,
+            "lastUpdate": last_update.isoformat() if last_update else None,
+        }
 
 
 class LocalvoltsDataLagSensor(CoordinatorEntity, SensorEntity):

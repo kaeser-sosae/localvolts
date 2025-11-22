@@ -204,8 +204,6 @@ class LocalvoltsActualCostTodaySensor(CoordinatorEntity, SensorEntity):
         }
 
 
-class LocalvoltsActualCostMonthSensor(CoordinatorEntity, SensorEntity):
-
 class LocalvoltsDataLagSensor(CoordinatorEntity, SensorEntity):
     """Sensor for monitoring the data lag time in seconds."""
 

@@ -1,21 +1,23 @@
 # Localvolts
 An integration for Home Assistant for customers of Localvolts electricity retailer in Australia
 
-The integration currently exposes five sensors...
+The integration currently exposes six sensors...
 
-1) costsFlexUp is the current IMPORT cost of electricity FOR YOU per kWh until the end of the current 5 minute interval.
+1) Import price (`costsFlexUp`) is the current IMPORT cost of electricity FOR YOU per kWh until the end of the current 5 minute interval.
 It's essentially the marginal cost of electricity for you and includes loss factors and network fees associated with increasing your consumption by 1kW right now.
 Of course, this only lasts until the end of the 5 minute interval, during which you would only have pulled that extra 1kW for 5 minutes which is a total energy of 1/12 kWh = 0.083kWh
 
 NOTE: If you are using the DemandInterval attribute of this sensor, please switch to the IntervalEnd sensor's attribute of the same name. The DemandInterval attribute will be deprecated from this sensor in a future release to clean up the code.
 
-2) earningsFlexUp is the current EXPORT price of electricity FOR YOU per additional kWh exported until the end of the current 5 minute interval.
+2) Export price (`earningsFlexUp`) is the current EXPORT price of electricity FOR YOU per additional kWh exported until the end of the current 5 minute interval.
 
-3) actualCost is the total cost you incurred for the latest 5 minute interval (in dollars, converted from cents returned by the API).
+3) Actual cost (this interval) (`costsAll`) is the total cost you incurred for the latest 5 minute interval (in dollars, converted from cents returned by the API).
 
-4) datalag which is the duration within the current 5 min interval before new data was discovered with the Localvolts API.  This is usually (hopefully) within 30 seconds and can be as low as 15 seconds.
+4) Energy used (this interval) (`importsAll`) is the total kWh consumed during the latest 5 minute interval.
 
-5) intervalEnd contains attributes for all of the data from the Localvolts API for the current 5 minute interval.
+5) Data Lag is the duration within the current 5 min interval before new data was discovered with the Localvolts API.  This is usually (hopefully) within 30 seconds and can be as low as 15 seconds.
+
+6) Interval End contains attributes for all of the data from the Localvolts API for the current 5 minute interval.
 
 For example, use the following code in your configuration.yaml to access the attribute for 'DemandInterval' (reflecting whether the current 5-minute interval is within the time window for a Demand Tariff to be active).
 
@@ -60,7 +62,7 @@ In Home Assistant, copy the files in this repository into a subfolder of your ex
 
 # Restart Home Assistant
 In either case, you will need to restart Home Assistant to get the integration working.
-Look for the sensors (sensor.costsFlexUp and sensor.earningsFlexUp) in Home Assistant to verify it worked.
+Look for the sensors (Import price, Export price, Actual cost (this interval), Energy used (this interval)) in Home Assistant to verify it worked. Existing entity IDs may remain the same (e.g. `sensor.costsflexup`) if they were created previously.
 
 # Updating with the helper script
 If you are running Home Assistant in Docker on a Raspberry Pi and have the update script at `/home/pi/update_localvolts.sh`, run:

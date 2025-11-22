@@ -4,11 +4,12 @@
 Localvolts is a Home Assistant integration for customers of the Localvolts electricity retailer in Australia. It exposes real-time price and interval data so automations can make cost-aware decisions.
 
 ## Key sensors
-- **sensor.costsFlexUp** – import cost per kWh for the rest of the current five-minute interval.
-- **sensor.earningsFlexUp** – export price per extra kWh sent to the grid during the current interval.
-- **sensor.actualCost** – total cost incurred for the latest five-minute interval (in dollars, converted from cents).
-- **sensor.dataLag** – delay between new data appearing in the Localvolts API and being retrieved.
-- **sensor.intervalEnd** – attributes describing the current five-minute interval, including demand and pricing information.
+- **Import price** (`costsFlexUp`) – import cost per kWh for the rest of the current five-minute interval.
+- **Export price** (`earningsFlexUp`) – export price per extra kWh sent to the grid during the current interval.
+- **Actual cost (this interval)** (`costsAll`) – total cost incurred for the latest five-minute interval (in dollars, converted from cents).
+- **Energy used (this interval)** (`importsAll`) – energy consumed in the latest five-minute interval (kWh).
+- **Data Lag** – delay between new data appearing in the Localvolts API and being retrieved.
+- **Interval End** – attributes describing the current five-minute interval, including demand and pricing information.
 
 ## Configuration
 1. Join Localvolts and request an API key.

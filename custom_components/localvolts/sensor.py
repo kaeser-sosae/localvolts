@@ -87,7 +87,7 @@ class LocalvoltsCostsFlexUpSensor(LocalvoltsSensor):
 
     def __init__(self, coordinator: LocalvoltsDataUpdateCoordinator) -> None:
         super().__init__(coordinator, COSTS_FLEX_UP)
-        self._attr_name = COSTS_FLEX_UP
+        self._attr_name = "Import price"
         self._attr_unique_id = f"{coordinator.nmi_id}_{COSTS_FLEX_UP}"
 
     @property
@@ -108,7 +108,7 @@ class LocalvoltsEarningsFlexUpSensor(LocalvoltsSensor):
 
     def __init__(self, coordinator: LocalvoltsDataUpdateCoordinator) -> None:
         super().__init__(coordinator, EARNINGS_FLEX_UP)
-        self._attr_name = EARNINGS_FLEX_UP
+        self._attr_name = "Export price"
         self._attr_unique_id = f"{coordinator.nmi_id}_{EARNINGS_FLEX_UP}"
 
 
@@ -120,7 +120,7 @@ class LocalvoltsActualCostSensor(LocalvoltsSensor):
 
     def __init__(self, coordinator: LocalvoltsDataUpdateCoordinator) -> None:
         super().__init__(coordinator, ACTUAL_COST)
-        self._attr_name = "actualCost"
+        self._attr_name = "Actual cost (this interval)"
         self._attr_unique_id = f"{coordinator.nmi_id}_actual_cost"
 
     @property
@@ -143,7 +143,7 @@ class LocalvoltsEnergyUsedSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator: LocalvoltsDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_name = "energyUsed"
+        self._attr_name = "Energy used (this interval)"
         self._attr_unique_id = f"{coordinator.nmi_id}_energy_used"
         self._attr_should_poll = False
 
@@ -172,7 +172,7 @@ class LocalvoltsDataLagSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator: LocalvoltsDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_name = "DataLag"
+        self._attr_name = "Data Lag"
         self._attr_unique_id = f"{coordinator.nmi_id}_data_lag"
         self._attr_should_poll = False
 
@@ -200,7 +200,7 @@ class LocalvoltsIntervalEndSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator: LocalvoltsDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_name = "IntervalEnd"
+        self._attr_name = "Interval End"
         self._attr_unique_id = f"{coordinator.nmi_id}_interval_end"
         self._attr_should_poll = False
 

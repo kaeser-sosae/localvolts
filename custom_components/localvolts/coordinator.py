@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.util import dt as dt_util
 
 import aiohttp
 
@@ -45,9 +46,8 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
         self.time_past_start: datetime.timedelta = datetime.timedelta(0)
         self.data: Dict[str, Any] = {}
         self.today_cost_cents: float | None = None
-        self.month_cost_cents: float | None = None
         self.today_cost_error: Optional[str] = None
-        self.month_cost_error: Optional[str] = None
+        self._tz = dt_util.get_time_zone(hass.config.time_zone) or datetime.timezone.utc
 
 
         super().__init__(
@@ -59,7 +59,7 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from the API endpoint."""
-        current_utc_time: datetime.datetime = datetime.datetime.now(datetime.timezone.utc)
+        current_utc_time: datetime.datetime = dt_util.utcnow()
         from_time: datetime.datetime = current_utc_time
         to_time: datetime.datetime = current_utc_time + datetime.timedelta(minutes=5)
 
@@ -181,24 +181,23 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
         if not isinstance(data, list):
             raise UpdateFailed("Unexpected API response format: expected list of intervals")
 
-        return data
+        adjusted: List[Dict[str, Any]] = []
+        for item in data:
+            adjusted.append(self._adjust_interval_record(item))
+
+        return adjusted
 
     async def _update_aggregated_costs(
         self, session: aiohttp.ClientSession, now_utc: datetime.datetime
     ) -> None:
-        """Update totals for today and this month (costsAll in cents)."""
-        # Ensure timezone-aware UTC
-        if now_utc.tzinfo is None:
-            now_utc = now_utc.replace(tzinfo=datetime.timezone.utc)
-        else:
-            now_utc = now_utc.astimezone(datetime.timezone.utc)
-
-        start_of_day = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-        start_of_month = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        """Update totals for today (costsAll in cents)."""
+        # Compute boundaries in the user's configured timezone, then convert to UTC for the API
+        local_now = now_utc.astimezone(self._tz) if now_utc.tzinfo else dt_util.now(self._tz)
+        start_of_day_local = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_day = dt_util.as_utc(start_of_day_local)
 
         # Reset errors and compute aggregates safely
         self.today_cost_error = None
-        self.month_cost_error = None
 
         day_intervals = await self._safe_fetch_intervals(session, start_of_day, now_utc, "today")
         if day_intervals is not None:
@@ -207,17 +206,9 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
             self.today_cost_cents = None
             self.today_cost_error = "Failed to fetch today's intervals"
 
-        month_intervals = await self._safe_fetch_intervals(session, start_of_month, now_utc, "month")
-        if month_intervals is not None:
-            self.month_cost_cents = self._sum_costs(month_intervals)
-        else:
-            self.month_cost_cents = None
-            self.month_cost_error = "Failed to fetch month intervals"
-
         _LOGGER.debug(
-            "Aggregated costs updated: today=%s cents, month=%s cents",
+            "Aggregated costs updated: today=%s cents",
             self.today_cost_cents,
-            self.month_cost_cents,
         )
 
     async def _safe_fetch_intervals(
@@ -258,3 +249,32 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
         else:
             dt_obj = dt_obj.astimezone(datetime.timezone.utc)
         return dt_obj.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    @staticmethod
+    def _adjust_interval_record(item: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Apply temporary adjustments to interval times to work around API date issues.
+
+        - intervalEnd: subtract 1 day and 2 hours, drop trailing Z by emitting ISO with offset
+        - lastUpdate: subtract 2 hours
+        """
+        adjusted = dict(item)
+        try:
+            interval_end = parser.isoparse(str(item.get("intervalEnd")))
+            interval_end = (interval_end - datetime.timedelta(days=1, hours=2)).astimezone(
+                datetime.timezone.utc
+            )
+            adjusted["intervalEnd"] = interval_end.isoformat()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Failed to adjust intervalEnd: %s", err)
+
+        try:
+            last_update = parser.isoparse(str(item.get("lastUpdate")))
+            last_update = (last_update - datetime.timedelta(hours=2)).astimezone(
+                datetime.timezone.utc
+            )
+            adjusted["lastUpdate"] = last_update.isoformat()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Failed to adjust lastUpdate: %s", err)
+
+        return adjusted

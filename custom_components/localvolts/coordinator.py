@@ -3,7 +3,7 @@
 import datetime
 import logging
 from dateutil import parser, tz
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import (
@@ -44,6 +44,8 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
         self.lastUpdate: Any = None
         self.time_past_start: datetime.timedelta = datetime.timedelta(0)
         self.data: Dict[str, Any] = {}
+        self.today_cost_cents: float | None = None
+        self.month_cost_cents: float | None = None
 
 
         super().__init__(
@@ -81,28 +83,8 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
             }
 
             try:
-            #    async with aiohttp.ClientSession() as session:
-            #        async with session.get(url, headers=headers) as response:
-            #            response.raise_for_status()
-            #            data = await response.json()
-                # Use Home Assistant's managed session
-                #session = self.hass.helpers.aiohttp_client.async_get_clientsession()
                 session = async_get_clientsession(self.hass)
-                async with session.get(url, headers=headers) as response:
-                    if response.status == 401:
-                        _LOGGER.critical("Unauthorized access: Check your API key.")
-                        raise UpdateFailed("Unauthorized access: Invalid API key.")
-                    elif response.status == 403:
-                        _LOGGER.critical("Forbidden: Check your Partner ID.")
-                        raise UpdateFailed("Forbidden: Invalid Partner ID.")
-
-                    response.raise_for_status()
-                    data: Any = await response.json()
-
-                # If the API returns an empty list, log a warning
-                if isinstance(data, list) and not data:
-                    _LOGGER.warning("No data received, check that your NMI, PartnerID and API Key are correct.")
-                    raise UpdateFailed("No data received: Invalid NMI?")
+                data = await self._fetch_intervals(session, from_time, to_time)
             
             
             except aiohttp.ClientError as e:
@@ -144,8 +126,106 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug("No new data with 'exp' quality found. Retaining last known data.")
                 # Do not update self.time_past_start; retain the last known value
                 # Optionally, you can log the time since the last update if needed
+            else:
+                # Update aggregated costs (today and this month) after a new interval is found.
+                try:
+                    await self._update_aggregated_costs(session, current_utc_time)
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.warning("Failed to update aggregated costs: %s", err)
         else:
             _LOGGER.debug("Data did not change. Still in the same interval.")
 
         # Return self.data to comply with DataUpdateCoordinator requirements
         return self.data
+
+    async def _fetch_intervals(
+        self,
+        session: aiohttp.ClientSession,
+        from_time: datetime.datetime,
+        to_time: datetime.datetime,
+    ) -> List[Dict[str, Any]]:
+        """Fetch interval data from the Localvolts API."""
+        from_time_str: str = self._format_time(from_time)
+        to_time_str: str = self._format_time(to_time)
+
+        url: str = (
+            f"https://api.localvolts.com/v1/customer/interval?"
+            f"NMI={self.nmi_id}&from={from_time_str}&to={to_time_str}"
+        )
+
+        headers: Dict[str, str] = {
+            "Authorization": f"apikey {self.api_key}",
+            "partner": self.partner_id,
+        }
+
+        async with session.get(url, headers=headers) as response:
+            if response.status == 401:
+                _LOGGER.critical("Unauthorized access: Check your API key.")
+                raise UpdateFailed("Unauthorized access: Invalid API key.")
+            if response.status == 403:
+                _LOGGER.critical("Forbidden: Check your Partner ID.")
+                raise UpdateFailed("Forbidden: Invalid Partner ID.")
+
+            response.raise_for_status()
+            data: Any = await response.json()
+
+        if isinstance(data, list) and not data:
+            _LOGGER.warning(
+                "No data received, check that your NMI, PartnerID and API Key are correct."
+            )
+            raise UpdateFailed("No data received: Invalid NMI?")
+
+        if not isinstance(data, list):
+            raise UpdateFailed("Unexpected API response format: expected list of intervals")
+
+        return data
+
+    async def _update_aggregated_costs(
+        self, session: aiohttp.ClientSession, now_utc: datetime.datetime
+    ) -> None:
+        """Update totals for today and this month (costsAll in cents)."""
+        # Ensure timezone-aware UTC
+        if now_utc.tzinfo is None:
+            now_utc = now_utc.replace(tzinfo=datetime.timezone.utc)
+        else:
+            now_utc = now_utc.astimezone(datetime.timezone.utc)
+
+        start_of_day = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_month = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        day_intervals = await self._fetch_intervals(session, start_of_day, now_utc)
+        month_intervals = await self._fetch_intervals(session, start_of_month, now_utc)
+
+        self.today_cost_cents = self._sum_costs(day_intervals)
+        self.month_cost_cents = self._sum_costs(month_intervals)
+
+        _LOGGER.debug(
+            "Aggregated costs updated: today=%s cents, month=%s cents",
+            self.today_cost_cents,
+            self.month_cost_cents,
+        )
+
+    @staticmethod
+    def _sum_costs(intervals: List[Dict[str, Any]]) -> float:
+        """Sum costsAll for intervals marked with quality 'exp'."""
+        total = 0.0
+        for item in intervals:
+            if item.get("quality", "").lower() != "exp":
+                continue
+            value = item.get("costsAll")
+            if value is None:
+                continue
+            try:
+                total += float(value)
+            except (TypeError, ValueError):
+                continue
+        return total
+
+    @staticmethod
+    def _format_time(dt_obj: datetime.datetime) -> str:
+        """Format datetime as Localvolts API expects (UTC, Z suffix)."""
+        if dt_obj.tzinfo is None:
+            dt_obj = dt_obj.replace(tzinfo=datetime.timezone.utc)
+        else:
+            dt_obj = dt_obj.astimezone(datetime.timezone.utc)
+        return dt_obj.strftime("%Y-%m-%dT%H:%M:%SZ")

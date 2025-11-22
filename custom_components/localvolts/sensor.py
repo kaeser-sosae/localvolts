@@ -25,6 +25,8 @@ COSTS_FLEX_UP = "costsFlexUp"
 EARNINGS_FLEX_UP = "earningsFlexUp"
 ACTUAL_COST = "costsAll"
 ENERGY_USED = "importsAll"
+ACTUAL_COST_TODAY = "actual_cost_today"
+ACTUAL_COST_MONTH = "actual_cost_month"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +45,8 @@ async def async_setup_entry(
             LocalvoltsEarningsFlexUpSensor(coordinator),
             LocalvoltsActualCostSensor(coordinator),
             LocalvoltsEnergyUsedSensor(coordinator),
+            LocalvoltsActualCostTodaySensor(coordinator),
+            LocalvoltsActualCostMonthSensor(coordinator),
             LocalvoltsDataLagSensor(coordinator),
             LocalvoltsIntervalEndSensor(coordinator),
         ]
@@ -144,7 +148,7 @@ class LocalvoltsEnergyUsedSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator: LocalvoltsDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_name = "Energy used (this interval)"
-        self._attr_unique_id = f"{coordinator.nmi_id}_energy_used"
+            self._attr_unique_id = f"{coordinator.nmi_id}_energy_used"
         self._attr_should_poll = False
 
     @property
@@ -156,6 +160,66 @@ class LocalvoltsEnergyUsedSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         """Return interval timestamps for reference."""
+        interval_end = self.coordinator.intervalEnd
+        last_update = self.coordinator.lastUpdate
+        return {
+            "intervalEnd": interval_end.isoformat() if interval_end else None,
+            "lastUpdate": last_update.isoformat() if last_update else None,
+        }
+
+
+class LocalvoltsActualCostTodaySensor(CoordinatorEntity, SensorEntity):
+    """Sensor for total cost today (sum of costsAll)."""
+
+    _attr_native_unit_of_measurement = "$"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: LocalvoltsDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Actual cost (today)"
+        self._attr_unique_id = f"{coordinator.nmi_id}_{ACTUAL_COST_TODAY}"
+        self._attr_should_poll = False
+
+    @property
+    def native_value(self):
+        """Return today's total cost in dollars."""
+        cents = getattr(self.coordinator, "today_cost_cents", None)
+        return round(cents / MONETARY_CONVERSION_FACTOR, 2) if cents is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        """Provide interval timestamps for reference."""
+        interval_end = self.coordinator.intervalEnd
+        last_update = self.coordinator.lastUpdate
+        return {
+            "intervalEnd": interval_end.isoformat() if interval_end else None,
+            "lastUpdate": last_update.isoformat() if last_update else None,
+        }
+
+
+class LocalvoltsActualCostMonthSensor(CoordinatorEntity, SensorEntity):
+    """Sensor for total cost this month (sum of costsAll)."""
+
+    _attr_native_unit_of_measurement = "$"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator: LocalvoltsDataUpdateCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "Actual cost (this month)"
+        self._attr_unique_id = f"{coordinator.nmi_id}_{ACTUAL_COST_MONTH}"
+        self._attr_should_poll = False
+
+    @property
+    def native_value(self):
+        """Return this month's total cost in dollars."""
+        cents = getattr(self.coordinator, "month_cost_cents", None)
+        return round(cents / MONETARY_CONVERSION_FACTOR, 2) if cents is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        """Provide interval timestamps for reference."""
         interval_end = self.coordinator.intervalEnd
         last_update = self.coordinator.lastUpdate
         return {

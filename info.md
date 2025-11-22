@@ -8,6 +8,8 @@ Localvolts is a Home Assistant integration for customers of the Localvolts elect
 - **Export price** (`earningsFlexUp`) – export price per extra kWh sent to the grid during the current interval.
 - **Actual cost (this interval)** (`costsAll`) – total cost incurred for the latest five-minute interval (in dollars, converted from cents).
 - **Energy used (this interval)** (`importsAll`) – energy consumed in the latest five-minute interval (kWh).
+- **Actual cost (today)** – total cost for all intervals today (sum of `costsAll`).
+- **Actual cost (this month)** – total cost for all intervals this month (sum of `costsAll`).
 - **Data Lag** – delay between new data appearing in the Localvolts API and being retrieved.
 - **Interval End** – attributes describing the current five-minute interval, including demand and pricing information.
 

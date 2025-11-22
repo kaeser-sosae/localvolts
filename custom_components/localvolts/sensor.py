@@ -148,7 +148,7 @@ class LocalvoltsEnergyUsedSensor(CoordinatorEntity, SensorEntity):
     def __init__(self, coordinator: LocalvoltsDataUpdateCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_name = "Energy used (this interval)"
-            self._attr_unique_id = f"{coordinator.nmi_id}_energy_used"
+        self._attr_unique_id = f"{coordinator.nmi_id}_energy_used"
         self._attr_should_poll = False
 
     @property

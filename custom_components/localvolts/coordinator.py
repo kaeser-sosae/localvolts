@@ -3,7 +3,7 @@
 import datetime
 import logging
 from dateutil import parser, tz
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import (
@@ -46,6 +46,8 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
         self.data: Dict[str, Any] = {}
         self.today_cost_cents: float | None = None
         self.month_cost_cents: float | None = None
+        self.today_cost_error: Optional[str] = None
+        self.month_cost_error: Optional[str] = None
 
 
         super().__init__(
@@ -131,7 +133,8 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
                 try:
                     await self._update_aggregated_costs(session, current_utc_time)
                 except Exception as err:  # noqa: BLE001
-                    _LOGGER.warning("Failed to update aggregated costs: %s", err)
+                    # Do not fail the coordinator if aggregation fails; only aggregation sensors should break.
+                    _LOGGER.debug("Aggregation update failed (sensors will show unavailable): %s", err)
         else:
             _LOGGER.debug("Data did not change. Still in the same interval.")
 
@@ -193,17 +196,43 @@ class LocalvoltsDataUpdateCoordinator(DataUpdateCoordinator):
         start_of_day = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
         start_of_month = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        day_intervals = await self._fetch_intervals(session, start_of_day, now_utc)
-        month_intervals = await self._fetch_intervals(session, start_of_month, now_utc)
+        # Reset errors and compute aggregates safely
+        self.today_cost_error = None
+        self.month_cost_error = None
 
-        self.today_cost_cents = self._sum_costs(day_intervals)
-        self.month_cost_cents = self._sum_costs(month_intervals)
+        day_intervals = await self._safe_fetch_intervals(session, start_of_day, now_utc, "today")
+        if day_intervals is not None:
+            self.today_cost_cents = self._sum_costs(day_intervals)
+        else:
+            self.today_cost_cents = None
+            self.today_cost_error = "Failed to fetch today's intervals"
+
+        month_intervals = await self._safe_fetch_intervals(session, start_of_month, now_utc, "month")
+        if month_intervals is not None:
+            self.month_cost_cents = self._sum_costs(month_intervals)
+        else:
+            self.month_cost_cents = None
+            self.month_cost_error = "Failed to fetch month intervals"
 
         _LOGGER.debug(
             "Aggregated costs updated: today=%s cents, month=%s cents",
             self.today_cost_cents,
             self.month_cost_cents,
         )
+
+    async def _safe_fetch_intervals(
+        self,
+        session: aiohttp.ClientSession,
+        from_time: datetime.datetime,
+        to_time: datetime.datetime,
+        label: str,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """Fetch intervals for aggregation without breaking the coordinator."""
+        try:
+            return await self._fetch_intervals(session, from_time, to_time)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Skipping %s aggregation due to error: %s", label, err)
+            return None
 
     @staticmethod
     def _sum_costs(intervals: List[Dict[str, Any]]) -> float:

@@ -188,6 +188,13 @@ class LocalvoltsActualCostTodaySensor(CoordinatorEntity, SensorEntity):
         return round(cents / MONETARY_CONVERSION_FACTOR, 2) if cents is not None else None
 
     @property
+    def available(self) -> bool:
+        """Available only if aggregation succeeded."""
+        if getattr(self.coordinator, "today_cost_error", None):
+            return False
+        return super().available
+
+    @property
     def extra_state_attributes(self):
         """Provide interval timestamps for reference."""
         interval_end = self.coordinator.intervalEnd
@@ -195,6 +202,7 @@ class LocalvoltsActualCostTodaySensor(CoordinatorEntity, SensorEntity):
         return {
             "intervalEnd": interval_end.isoformat() if interval_end else None,
             "lastUpdate": last_update.isoformat() if last_update else None,
+            "aggregation_error": getattr(self.coordinator, "today_cost_error", None),
         }
 
 
@@ -218,6 +226,13 @@ class LocalvoltsActualCostMonthSensor(CoordinatorEntity, SensorEntity):
         return round(cents / MONETARY_CONVERSION_FACTOR, 2) if cents is not None else None
 
     @property
+    def available(self) -> bool:
+        """Available only if aggregation succeeded."""
+        if getattr(self.coordinator, "month_cost_error", None):
+            return False
+        return super().available
+
+    @property
     def extra_state_attributes(self):
         """Provide interval timestamps for reference."""
         interval_end = self.coordinator.intervalEnd
@@ -225,6 +240,7 @@ class LocalvoltsActualCostMonthSensor(CoordinatorEntity, SensorEntity):
         return {
             "intervalEnd": interval_end.isoformat() if interval_end else None,
             "lastUpdate": last_update.isoformat() if last_update else None,
+            "aggregation_error": getattr(self.coordinator, "month_cost_error", None),
         }
 
 
